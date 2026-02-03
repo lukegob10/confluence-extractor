@@ -1,12 +1,11 @@
-# Confluence Scraper + RAG — Project Plan
+# Confluence Ingestion — Project Plan
 
 ## Objective
 Build a Python CLI that can:
 1) Pull Confluence pages (by URL, page IDs, space(s), labels, ancestor page, or raw CQL),
 2) Convert page bodies into clean text,
 3) Chunk + embed the text,
-4) Persist it in a local vector store,
-5) Answer questions using retrieval‑augmented generation (RAG) with source citations.
+4) Persist it in a vector store of your choosing (or export to files for downstream tools).
 
 ## Scope (v1)
 ### In scope
@@ -26,11 +25,10 @@ Build a Python CLI that can:
   - Keep code blocks (from Confluence `ac:plain-text-body`) as text
   - Chunking with overlap and deterministic chunk IDs
 - Vector store
-  - Local persistent store (default: Chroma on disk)
+  - Pluggable store target (built-in options below; extensible via plugin)
   - Store metadata for filtering (space key, page id, title, url, updated time, version)
-- Q&A
-  - Retrieval with configurable `top_k`
-  - Answer generation via pluggable providers (OpenAI or Ollama) with citations
+- Embeddings
+  - Provider + model are configurable at runtime (CLI flags and/or env vars)
 
 ### Out of scope (initially)
 - Attachments (PDF/Office), comments, whiteboards, databases
@@ -41,7 +39,7 @@ Build a Python CLI that can:
 ## Assumptions
 - You have a Confluence Personal Access Token (PAT) with permission to read the spaces/pages you want.
 - Your token is provided via env var or prompt (never hard-coded).
-- The CLI will run locally (WSL/macOS/Linux) and persist a local index directory.
+- The CLI will run locally on Windows and persist a local index directory (default: `index\\`).
 
 ## Architecture
 ### Data flow
@@ -50,15 +48,16 @@ Build a Python CLI that can:
 3. **Normalize** content to text
 4. **Chunk** to fixed size (with overlap)
 5. **Embed** chunks (OpenAI or Ollama embeddings)
-6. **Upsert** into vector store (Chroma), deleting old chunks for updated pages
-7. **Query**: embed question → vector search → LLM answer with sources
+6. **Upsert/Export** to the configured vector store target (deleting old chunks for updated pages)
 
 ### Storage layout
 ```
 index/
-  chroma/                 # Chroma persistent store
+  chroma/                 # Chroma persistent store (if using --vectorstore chroma)
+  jsonl/                  # JSONL export (if using --vectorstore jsonl)
   ingestion_state.json    # page_id -> version (for incremental sync)
 ```
+On Windows, the same folders appear as `index\\chroma\\` and `index\\ingestion_state.json`.
 
 ### Document schema (per chunk)
 - `id`: `"{page_id}:{version}:{chunk_index}"`
@@ -74,15 +73,26 @@ index/
 
 ## CLI plan
 ### Commands
-- `confluence-rag ingest`
+- `confluence-ingest ingest`
   - pulls pages based on selectors and updates the vector index
   - supports `--dry-run` to show what would be pulled
-- `confluence-rag query "…"`
-  - retrieves the most relevant chunks and answers with citations
-- `confluence-rag confluence spaces`
+- `confluence-ingest confluence spaces`
   - lists accessible spaces (sanity check)
-- `confluence-rag doctor`
+- `confluence-ingest doctor`
   - validates auth + connectivity + index directory
+
+### Vector store adapters
+- Built-in:
+  - `--vectorstore jsonl`: writes one `*.jsonl` file per page (embeddings + metadata)
+  - `--vectorstore chroma`: writes to a local persistent Chroma index
+- Custom:
+  - `--vectorstore your_module:factory` with optional `--vectorstore-arg key=value` flags
+
+### Windows execution notes
+- If you haven't installed the package yet:
+  - PowerShell: `$env:PYTHONPATH="src"; py -m confluence_rag ...`
+  - CMD: `set PYTHONPATH=src && py -m confluence_rag ...`
+- After installing in a venv, you can run: `confluence-ingest ...` (or `confluence-rag ...` as an alias)
 
 ### Global config inputs
 - Environment variables (optionally via `.env`)
@@ -104,11 +114,11 @@ index/
 - Ingest by `--space` / `--cql` / `--page-id` / `--url`
 - HTML → text conversion
 - Chunk + embed + persist to local Chroma
-- Query with “sources” output (even without LLM)
+- Export to JSONL for downstream ingestion tools
 
 ### v1 (next)
 - Incremental sync (version-aware) and deletion of stale chunks
-- Filters on query (space/page)
+- Filters on export/upsert (space/page)
 - Better text cleanup for Confluence macros/code blocks
 - Add tests for URL parsing + chunking + CQL builder
 
@@ -124,8 +134,7 @@ index/
 4. Scope: do you want ingestion across **all spaces you can access**, or only a defined allowlist?
 5. Selection: should “by URL” support **single page**, **page + descendants**, or both?
 6. Update model: is “incremental by version number” enough, or do you need delete detection for removed pages too?
-7. Vector store preference: local (**Chroma/FAISS**) or remote (**Qdrant/Pinecone/Weaviate**)?
-8. Model preference: do you want to use **OpenAI**, **Ollama (local)**, or something else for embeddings + answers?
-9. Output: should answers include **inline citations** and a **sources section** with URLs?
+7. Vector store target: do you want built-in support for a specific store (e.g. **Qdrant**, **Pinecone**, **Weaviate**), or will you provide a plugin via `module:callable`?
+8. Embeddings: do you want to use **OpenAI** or **Ollama (local)**, and what model name(s) should be the defaults?
+9. Output schema: is the current per-chunk schema (id/text/embedding/metadata) sufficient for your downstream tool?
 10. Size: roughly how many pages / total size are you indexing (10s, 100s, 10k+)?
-

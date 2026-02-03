@@ -17,7 +17,7 @@ from confluence_rag.providers.ollama import OllamaEmbeddings
 from confluence_rag.providers.openai import OpenAIEmbeddings
 from confluence_rag.settings import EmbeddingsSettings
 from confluence_rag.state import IngestionState
-from confluence_rag.vectorstore.chroma_store import ChromaVectorStore
+from confluence_rag.vectorstore.types import VectorStore
 
 
 @dataclass(frozen=True)
@@ -79,7 +79,7 @@ def _batched(items: list[str], batch_size: int) -> Iterable[list[str]]:
 def ingest(
     *,
     confluence: ConfluenceClient,
-    vectorstore: ChromaVectorStore,
+    vectorstore: VectorStore,
     embeddings_settings: EmbeddingsSettings,
     urls: list[str] | None = None,
     page_ids: list[str] | None = None,
@@ -184,6 +184,10 @@ def ingest(
                         "confluence_url": page.url,
                         "confluence_version": page.version,
                         "updated_at": page.updated_at,
+                        "embedding_provider": embeddings_settings.provider,
+                        "embedding_model": embeddings_settings.model,
+                        "chunk_size": chunk_size,
+                        "chunk_overlap": chunk_overlap,
                         "chunk_index": idx,
                     }
                 )
@@ -209,4 +213,3 @@ def ingest(
         state.save()
 
     return stats
-

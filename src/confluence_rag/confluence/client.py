@@ -53,7 +53,7 @@ class ConfluenceClient:
             base_url=self._api_base_url,
             headers={
                 "Accept": "application/json",
-                "User-Agent": "confluence-rag/0.1.0",
+                "User-Agent": "confluence-ingest/0.1.0",
                 **auth.headers(),
             },
             verify=verify_ssl,
@@ -183,4 +183,3 @@ def _page_from_content(content: dict[str, Any], *, site_base_url: str) -> Conflu
         updated_at=updated_at,
         body_storage=body_storage,
     )
-
